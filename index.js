@@ -9,7 +9,10 @@
     body { font-family: Arial, sans-serif; padding: 2rem; background: #f3f3f3; }
     button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #1e90ff; color: white; border: none; border-radius: 5px; }
     button:hover { background: #0d6efd; }
-    .jetton { background: white; padding: 10px; border-radius: 8px; margin: 5px 0; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .jetton { background: white; padding: 10px; border-radius: 8px; margin: 10px 0; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; align-items: center; }
+    .jetton img { width: 40px; height: 40px; border-radius: 50%; margin-right: 10px; }
+    .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #1e90ff; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; display: inline-block; margin-left: 10px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -41,7 +44,7 @@
     };
 
     async function fetchJettons(walletAddress) {
-      jettonsEl.innerHTML = "Loading...";
+      jettonsEl.innerHTML = 'Loading<span class="spinner"></span>';
       try {
         const result = await client.callGetMethod(ton.Address.parse(walletAddress), "get_wallets");
         const wallets = result.stack.map(item => ({ master: item[0].toString(), wallet: item[1].toString() }));
@@ -55,8 +58,18 @@
             const metaRes = await client.callGetMethod(ton.Address.parse(w.master), "get_jetton_data");
             const name = bytesToString(metaRes.stack[0][1]);
             const symbol = bytesToString(metaRes.stack[1][1]);
+            let logo;
+            try {
+              const logoCell = metaRes.stack[2][1];
+              if(logoCell) logo = bytesToString(logoCell);
+            } catch{}
 
-            html += `<div class="jetton"><strong>${name}</strong> (${symbol}): ${balance.toString()}</div>`;
+            html += `<div class="jetton">
+                      ${logo ? `<img src="${logo}" alt="${name}">` : `<div style="width:40px;height:40px;background:#ddd;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;margin-right:10px;">${symbol[0]}</div>`}
+                      <div>
+                        <strong>${name}</strong> (${symbol}): ${balance.toString()}
+                      </div>
+                    </div>`;
           } catch(e) {
             console.log("Error reading jetton", w.wallet, e);
           }
