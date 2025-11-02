@@ -1,95 +1,528 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Simple TON Wallet</title>
+  <meta charset="utf-8" />
+  <title>Fresh TON Wallet — Jettons & Reclaim</title>
+
+  <!-- TonConnect and TON SDK -->
   <script src="https://unpkg.com/tonconnect/dist/tonconnect.min.js"></script>
   <script src="https://unpkg.com/ton/dist/ton.min.js"></script>
+
+  <!-- Buffer polyfill to avoid "Buffer is not defined" -->
+  <script src="https://cdn.jsdelivr.net/npm/buffer@6.0.3/index.min.js"></script>
+  <script>window.Buffer = window.Buffer || buffer.Buffer;</script>
+
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body { font-family: Arial, sans-serif; padding: 2rem; background: #f3f3f3; }
-    button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #1e90ff; color: white; border: none; border-radius: 5px; }
-    button:hover { background: #0d6efd; }
-    .jetton { background: white; padding: 10px; border-radius: 8px; margin: 10px 0; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; align-items: center; }
-    .jetton img { width: 40px; height: 40px; border-radius: 50%; margin-right: 10px; }
-    .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #1e90ff; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; display: inline-block; margin-left: 10px; }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    :root{
+      --bg1: linear-gradient(120deg,#06243a 0%,#033a63 50%, #0aa0ff 100%);
+      --glass: rgba(255,255,255,0.06);
+      --accent: #00d4ff;
+    }
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;}
+    body{
+      background: radial-gradient(ellipse at 10% 10%, rgba(0,160,255,0.07), transparent 10%),
+                  radial-gradient(ellipse at 90% 90%, rgba(0,200,180,0.04), transparent 10%),
+                  #071428;
+      color:#e6f3ff;
+      padding:28px;
+      -webkit-font-smoothing:antialiased;
+    }
+
+    .app {
+      max-width:980px;margin:0 auto;
+      backdrop-filter: blur(8px);
+    }
+
+    .header {
+      display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;
+    }
+    h1 { margin:0;font-size:20px;letter-spacing:0.3px }
+    .sub { color:rgba(230,243,255,0.6); font-size:13px }
+
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border: 1px solid rgba(255,255,255,0.04);
+      border-radius:14px;padding:16px;box-shadow: 0 6px 30px rgba(0,0,0,0.65);
+    }
+
+    .connect {
+      display:inline-flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;
+      background:linear-gradient(90deg,#06b6ff,#00b4d8); color:#001f2b;font-weight:600;border:none;cursor:pointer;
+      box-shadow: 0 8px 24px rgba(3, 169, 244, 0.12), inset 0 -2px 0 rgba(255,255,255,0.06);
+      transition: transform .12s ease;
+    }
+    .connect:hover{ transform: translateY(-2px) }
+
+    .wallet-row { display:flex;align-items:center;gap:12px;justify-content:space-between;margin-bottom:12px }
+    .balance-big { font-size:20px;font-weight:700;letter-spacing:0.6px }
+    .small-muted { color:rgba(230,243,255,0.6);font-size:13px }
+
+    .grid { display:grid;grid-template-columns: repeat(auto-fill,minmax(260px,1fr)); gap:14px;margin-top:14px }
+    .jetton {
+      display:flex;gap:12px;align-items:center;padding:12px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.03));
+      border:1px solid rgba(255,255,255,0.03);transition: transform .14s ease, box-shadow .14s ease; cursor:default;
+    }
+    .jetton:hover { transform: translateY(-6px); box-shadow: 0 18px 40px rgba(0,0,0,0.5); }
+
+    .logo {
+      width:52px;height:52px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.02);
+      flex-shrink:0; overflow:hidden;
+    }
+    .logo img{ width:100%;height:100%; object-fit:cover; display:block }
+
+    .jetton-info { flex:1 }
+    .jetton-name { font-weight:700 }
+    .jetton-symbol { color:rgba(230,243,255,0.65); font-size:13px }
+    .jetton-balance { margin-top:6px;font-weight:700; color:var(--accent) }
+
+    .jetton-actions { margin-left:12px; display:flex;flex-direction:column;gap:10px; align-items:flex-end }
+    .btn-close {
+      background:transparent;border:1px solid rgba(255,255,255,0.06);color:#ff6b6b;padding:8px 10px;border-radius:10px;cursor:pointer;
+    }
+    .btn-refresh { background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--accent);padding:8px 10px;border-radius:10px;cursor:pointer;}
+
+    /* modal */
+    .modal-back { position:fixed;inset:0;background:linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.6));display:none;align-items:center;justify-content:center;z-index:90 }
+    .modal { width:420px; max-width:92%; background:rgba(6,36,57,0.98); border-radius:12px;padding:18px;border:1px solid rgba(255,255,255,0.04); }
+    .modal h3 { margin:0 0 8px 0 }
+    .modal p { color:rgba(230,243,255,0.8); font-size:14px; margin:0 0 12px 0 }
+    .modal .row { display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:10px }
+
+    .spinner{ display:inline-block; width:18px;height:18px;border:3px solid rgba(255,255,255,0.06);border-top-color:var(--accent);border-radius:50%; animation:spin 1s linear infinite }
+    @keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+
+    .fade-in { animation: fadeIn .36s ease both; }
+    @keyframes fadeIn { from { opacity:0; transform: translateY(6px) } to { opacity:1; transform:none } }
+
+    footer { margin-top:18px;color:rgba(230,243,255,0.55); font-size:13px }
   </style>
 </head>
 <body>
-  <h1>Simple TON Wallet</h1>
-  <button id="connectBtn">Connect Wallet</button>
-  <p id="address"></p>
-  <div id="jettons"></div>
+  <div class="app">
+    <div class="header">
+      <div>
+        <h1>Fresh TON Wallet</h1>
+        <div class="sub">Connect TonKeeper — view TON & Jettons. Close jetton wallets & reclaim rent (sign to confirm).</div>
+      </div>
+      <div>
+        <button id="connectBtn" class="connect">Connect Wallet</button>
+      </div>
+    </div>
 
-  <script>
-    const client = new ton.TonClient({ endpoint: "https://toncenter.com/api/v2/jsonRPC" });
-    const connectBtn = document.getElementById("connectBtn");
-    const addressEl = document.getElementById("address");
-    const jettonsEl = document.getElementById("jettons");
+    <div id="mainCard" class="card">
+      <div class="wallet-row">
+        <div>
+          <div class="small-muted">Connected address</div>
+          <div id="addr" class="balance-big">—</div>
+        </div>
+        <div style="text-align:right">
+          <div class="small-muted">TON Balance</div>
+          <div id="tonBalance" class="balance-big">—</div>
+          <div style="margin-top:6px">
+            <button id="refreshBtn" class="btn-refresh">Refresh</button>
+          </div>
+        </div>
+      </div>
 
-    const tonConnect = new TonConnect.TonConnect({ manifestUrl: "https://YOUR_GITHUB_USER.github.io/manifest.json" });
+      <div style="margin-top:14px">
+        <div class="small-muted">Jettons</div>
+        <div id="jettonGrid" class="grid" style="margin-top:8px"></div>
+      </div>
+    </div>
 
-    tonConnect.onStatusChange(async (wallet) => {
-      if(wallet) {
-        addressEl.textContent = "Connected: " + wallet.account.address;
-        await fetchJettons(wallet.account.address);
-      } else {
-        addressEl.textContent = "";
-        jettonsEl.innerHTML = "";
-      }
-    });
+    <footer>Test on testnet first. Close (delete) jetton wallets is irreversible for that wallet.</footer>
+  </div>
 
-    connectBtn.onclick = async () => {
-      await tonConnect.connect();
-    };
+  <!-- modal -->
+  <div id="modalBack" class="modal-back">
+    <div class="modal fade-in">
+      <h3 id="modalTitle">Close Jetton Wallet</h3>
+      <p id="modalBody">Confirm closing the jetton wallet...</p>
+      <div id="modalStatus" style="min-height:22px"></div>
+      <div class="row" style="margin-top:12px">
+        <div style="display:flex;gap:8px">
+          <button id="confirmClose" class="connect">Confirm & Sign</button>
+          <button id="cancelClose" class="btn-refresh">Cancel</button>
+        </div>
+        <div id="modalFee" class="small-muted"></div>
+      </div>
+    </div>
+  </div>
 
-    async function fetchJettons(walletAddress) {
-      jettonsEl.innerHTML = 'Loading<span class="spinner"></span>';
-      try {
-        const result = await client.callGetMethod(ton.Address.parse(walletAddress), "get_wallets");
-        const wallets = result.stack.map(item => ({ master: item[0].toString(), wallet: item[1].toString() }));
+<script>
+(async ()=>{
 
-        let html = "";
-        for(const w of wallets) {
-          try {
-            const balanceRes = await client.callGetMethod(ton.Address.parse(w.wallet), "get_balance");
-            const balance = BigInt(balanceRes.stack[0][1]) / 10n**9n;
+  // ---------- CONFIG ----------
+  // Use MAINNET endpoint by default. For test, set RPC_ENDPOINT to e.g. "https://testnet.toncenter.com/api/v2/jsonRPC"
+  const RPC_ENDPOINT = "https://toncenter.com/api/v2/jsonRPC";
+  const MANIFEST_URL = "https://YOUR_GITHUB_USER.github.io/manifest.json"; // <-- update this
+  // Estimated fee to attach to the close message (in TON). This is an estimate; adjust after testing.
+  const ESTIMATED_FEE_TON = 0.02;
 
-            const metaRes = await client.callGetMethod(ton.Address.parse(w.master), "get_jetton_data");
-            const name = bytesToString(metaRes.stack[0][1]);
-            const symbol = bytesToString(metaRes.stack[1][1]);
-            let logo;
-            try {
-              const logoCell = metaRes.stack[2][1];
-              if(logoCell) logo = bytesToString(logoCell);
-            } catch{}
+  // ---------- libs ----------
+  const TonClient = ton.TonClient;
+  const Address = ton.Address;
+  const Cell = ton.Cell;
+  const beginCell = ton.boc.beginCell;
+  const TonConnect = TonConnectLib.TonConnect; // from tonconnect.min.js
 
-            html += `<div class="jetton">
-                      ${logo ? `<img src="${logo}" alt="${name}">` : `<div style="width:40px;height:40px;background:#ddd;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;margin-right:10px;">${symbol[0]}</div>`}
-                      <div>
-                        <strong>${name}</strong> (${symbol}): ${balance.toString()}
-                      </div>
-                    </div>`;
-          } catch(e) {
-            console.log("Error reading jetton", w.wallet, e);
-          }
-        }
-        jettonsEl.innerHTML = html || "No Jettons found.";
-      } catch(e) {
-        jettonsEl.innerHTML = "Error fetching jettons.";
-        console.error(e);
-      }
-    }
+  // Fix global for some SDK functions
+  const client = new TonClient({ endpoint: RPC_ENDPOINT });
 
-    function bytesToString(cellBase64) {
-      try {
-        const cell = ton.Cell.fromBoc(Uint8Array.from(atob(cellBase64), c => c.charCodeAt(0)))[0];
+  const tonConnect = new TonConnect({ manifestUrl: MANIFEST_URL });
+  const connectBtn = document.getElementById("connectBtn");
+  const addrEl = document.getElementById("addr");
+  const tonBalanceEl = document.getElementById("tonBalance");
+  const jettonGrid = document.getElementById("jettonGrid");
+  const refreshBtn = document.getElementById("refreshBtn");
+
+  const modalBack = document.getElementById("modalBack");
+  const modalTitle = document.getElementById("modalTitle");
+  const modalBody = document.getElementById("modalBody");
+  const modalStatus = document.getElementById("modalStatus");
+  const modalFee = document.getElementById("modalFee");
+  const confirmCloseBtn = document.getElementById("confirmClose");
+  const cancelCloseBtn = document.getElementById("cancelClose");
+
+  let connectedAccount = null;
+  let jettonListCache = []; // {masterAddress, walletAddress, name, symbol, logo, balanceRaw, decimals}
+
+  // ---------- helpers ----------
+  function formatTon(nanoStr){
+    try {
+      // input is string or bigint of nanoton
+      const nan = BigInt(nanoStr);
+      const ton = Number(nan) / 1e9;
+      return ton.toLocaleString(undefined,{maximumFractionDigits:9});
+    } catch { return nanoStr }
+  }
+  function shortAddr(a){
+    if(!a) return "—";
+    return a.slice(0,6) + "…" + a.slice(-6);
+  }
+  function showModal(title, body, feeText){
+    modalTitle.textContent = title;
+    modalBody.textContent = body;
+    modalFee.textContent = feeText || "";
+    modalStatus.innerHTML = "";
+    modalBack.style.display = "flex";
+  }
+  function hideModal(){ modalBack.style.display = "none"; }
+
+  // Convert base64 cell stored in stack value to UTF-8 string (safe)
+  function cellStackValueToString(stackVal){
+    try {
+      // stackVal is something like [ "cell", { "bytes": "BASE64..." } ] or sometimes value directly
+      // We'll try to parse if base64 present
+      if(!stackVal) return "";
+      // If it's an object with 'bytes' property:
+      if(stackVal.bytes) {
+        const b64 = stackVal.bytes;
+        const u8 = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
+        const [cell] = Cell.fromBoc(u8);
         const bytes = cell.beginParse().readRemainingBytes();
         return new TextDecoder().decode(bytes);
-      } catch {
-        return "";
       }
+      // If it's a base64 string directly:
+      if(typeof stackVal === "string"){
+        const u8 = Uint8Array.from(atob(stackVal), c=>c.charCodeAt(0));
+        const [cell] = Cell.fromBoc(u8);
+        const bytes = cell.beginParse().readRemainingBytes();
+        return new TextDecoder().decode(bytes);
+      }
+      // fallback
+      return "";
+    } catch(e){
+      return "";
     }
-  </script>
+  }
+
+  // TonConnect sign + send wrapper - uses sendTransaction (TON Connect style)
+  async function sendTonConnectTransaction(messages){
+    // messages: array of { to, value (in TON string), payload } where payload can be boc base64 or omitted
+    // TonConnect sendTransaction expects different param names depending on version; below is compatible
+    // with TON Connect UI method: sendTransaction({ validUntil, messages: [ { address, amount, payload } ] })
+    try {
+      // Build messages in required shape
+      const msgs = messages.map(m => {
+        const result = {
+          address: m.to,
+          amount: (typeof m.value === "string") ? m.value : String(m.value)
+        };
+        if(m.bocBase64){
+          result.payload = { type: "boc", boc: m.bocBase64 };
+        } else if(m.bodyBase64){
+          // older variant
+          result.payload = { type: "boc", boc: m.bodyBase64 };
+        }
+        return result;
+      });
+
+      // validUntil optional
+      const res = await tonConnect.sendTransaction({ messages: msgs, validUntil: Math.floor(Date.now()/1000) + 60*10 });
+      // res is signed BOC bytes (base64) or array depending on SDK - caller should check transaction on-chain
+      return res;
+    } catch(err){
+      throw err;
+    }
+  }
+
+  // ---------- UI wiring ----------
+  connectBtn.onclick = async () => {
+    try {
+      await tonConnect.connect();
+    } catch(e){
+      console.error(e);
+      alert("Connect cancelled or failed.");
+    }
+  };
+
+  tonConnect.onStatusChange(async (wallet)=>{
+    if(!wallet){
+      connectedAccount = null;
+      connectBtn.textContent = "Connect Wallet";
+      addrEl.textContent = "—";
+      tonBalanceEl.textContent = "—";
+      jettonGrid.innerHTML = "";
+      return;
+    }
+    connectedAccount = wallet.account;
+    connectBtn.textContent = "Connected";
+    addrEl.textContent = connectedAccount.address;
+    await reloadAll();
+  });
+
+  refreshBtn.onclick = () => reloadAll();
+
+  // ---------- core functions ----------
+  async function reloadAll(){
+    if(!connectedAccount) return;
+    jettonGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:18px"><span class="spinner"></span> Loading balances...</div>';
+    try {
+      // 1) get TON balance (getAccount)
+      const acc = await client.getAccount(Address.parse(connectedAccount.address));
+      const balanceNano = acc.balance ? BigInt(acc.balance.toString()) : 0n;
+      tonBalanceEl.textContent = formatTon(balanceNano.toString());
+
+      // 2) get jetton wallets for this owner: call "get_wallets"
+      // many wallets implement get_wallets on the owner wallet (standard)
+      const getWalletsRes = await client.callGetMethod(Address.parse(connectedAccount.address), "get_wallets");
+      const stack = getWalletsRes.stack || [];
+      const pairs = [];
+      // stack structure: usually a cell list of pairs - may vary
+      // We'll try to decode generically: each item is a pair of (master, wallet)
+      for(let i=0;i<stack.length;i++){
+        const el = stack[i];
+        // el may be array-like
+        try {
+          const master = el[0].toString ? el[0].toString() : String(el[0]);
+          const wallet = el[1].toString ? el[1].toString() : String(el[1]);
+          pairs.push({ masterAddress: master, walletAddress: wallet });
+        } catch(e){
+          // ignore
+        }
+      }
+
+      // If pairs empty, nothing found
+      if(pairs.length === 0){
+        jettonGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:16px">No Jettons found.</div>';
+        jettonListCache = [];
+        return;
+      }
+
+      // For each pair, fetch get_balance and get_jetton_data on master
+      const resultNodes = [];
+      for(const p of pairs){
+        try {
+          const [balRes, metaRes] = await Promise.all([
+            client.callGetMethod(Address.parse(p.walletAddress), "get_balance"),
+            client.callGetMethod(Address.parse(p.masterAddress), "get_jetton_data")
+          ]);
+
+          // parse balance
+          let balanceNano = 0n;
+          try { balanceNano = BigInt(balRes.stack[0][1]); } catch(e){ balanceNano = 0n; }
+
+          // parse metadata elements (TEP-74 typical ordering: name, symbol, decimals, icon_url/cell, content etc) — implementations vary.
+          const metaStack = metaRes.stack || [];
+          let name = "", symbol = "", logo = "", decimals = 9;
+          try {
+            // best effort: many implementations store name and symbol in bytes cells in stack[0], stack[1]
+            if(metaStack[0]) name = cellStackValueToString(metaStack[0][1]) || name;
+            if(metaStack[1]) symbol = cellStackValueToString(metaStack[1][1]) || symbol;
+            // try decimals if present
+            if(metaStack[2] && typeof metaStack[2] === "object" && metaStack[2][0] === "num") {
+              // some nodes return numeric decimals differently
+              decimals = Number(metaStack[2][1] || decimals);
+            } else if(metaStack[2]) {
+              // if it's bytes containing a URI, maybe logo
+              const maybe = cellStackValueToString(metaStack[2][1]);
+              if(maybe && (maybe.startsWith("http")||maybe.startsWith("data:"))) logo = maybe;
+            }
+            // tertiary tries for logo
+            if(!logo && metaStack[3]) {
+              logo = cellStackValueToString(metaStack[3][1]) || logo;
+            }
+          } catch(e){
+            console.warn("meta parse",e);
+          }
+
+          resultNodes.push({
+            masterAddress: p.masterAddress,
+            walletAddress: p.walletAddress,
+            balanceNano: balanceNano,
+            name: name || shortAddr(p.masterAddress),
+            symbol: symbol || "JTN",
+            logo,
+            decimals
+          });
+        } catch(err){
+          console.warn("failed to read jetton pair",p,err);
+        }
+      }
+
+      jettonListCache = resultNodes;
+      renderJettons();
+    } catch(err){
+      console.error(err);
+      jettonGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:18px">Error loading jettons</div>';
+    }
+  }
+
+  function renderJettons(){
+    if(!jettonListCache || jettonListCache.length === 0){
+      jettonGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:16px">No Jettons found.</div>';
+      return;
+    }
+    jettonGrid.innerHTML = "";
+    jettonListCache.forEach((j,i)=>{
+      const el = document.createElement("div");
+      el.className = "jetton fade-in";
+
+      const logoDiv = document.createElement("div");
+      logoDiv.className = "logo";
+      if(j.logo){
+        const img = document.createElement("img");
+        img.src = j.logo;
+        img.alt = j.name;
+        logoDiv.appendChild(img);
+      } else {
+        const fallback = document.createElement("div");
+        fallback.style.width="100%";fallback.style.height="100%";fallback.style.display="flex";fallback.style.alignItems="center";
+        fallback.style.justifyContent="center";fallback.style.fontWeight="700";fallback.style.color="#062e3a";fallback.style.background="#00e3ff";
+        fallback.textContent = j.symbol ? j.symbol[0] : "?";
+        logoDiv.appendChild(fallback);
+      }
+
+      const info = document.createElement("div");
+      info.className = "jetton-info";
+      info.innerHTML = `<div class="jetton-name">${escapeHtml(j.name)}</div>
+                        <div class="jetton-symbol">${escapeHtml(j.symbol)} • ${shortAddr(j.walletAddress)}</div>
+                        <div class="jetton-balance">${formatTokenHuman(j.balanceNano, j.decimals)} ${escapeHtml(j.symbol)}</div>`;
+
+      const actions = document.createElement("div");
+      actions.className = "jetton-actions";
+      const closeBtn = document.createElement("button");
+      closeBtn.className = "btn-close";
+      closeBtn.textContent = "Close";
+      closeBtn.onclick = ()=> onCloseClick(j);
+      const refreshSmall = document.createElement("button");
+      refreshSmall.className = "btn-refresh";
+      refreshSmall.textContent = "Refresh";
+      refreshSmall.onclick = async ()=> { await reloadAll(); };
+
+      actions.appendChild(closeBtn);
+      actions.appendChild(refreshSmall);
+
+      el.appendChild(logoDiv);
+      el.appendChild(info);
+      el.appendChild(actions);
+      jettonGrid.appendChild(el);
+    });
+  }
+
+  function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function formatTokenHuman(balanceNano, decimals){
+    try {
+      const b = BigInt(balanceNano);
+      const scale = BigInt(10) ** BigInt(decimals);
+      const whole = b / scale;
+      const frac = b % scale;
+      const fracStr = String(frac).padStart(String(scale-1).length,'0').replace(/0+$/,'');
+      return fracStr ? `${whole.toString()}.${fracStr}` : whole.toString();
+    } catch { return String(balanceNano) }
+  }
+
+  // ---------- Close jetton workflow ----------
+  let pendingCloseTarget = null;
+
+  function onCloseClick(jetton) {
+    pendingCloseTarget = jetton;
+    showModal("Close Jetton Wallet", `Close jetton wallet for ${jetton.name} (${jetton.symbol}) and reclaim remaining TON in that token-wallet. This will destroy the jetton wallet contract for address ${shortAddr(jetton.walletAddress)}. You will be asked to sign the transaction in TonKeeper.`, `Estimated fee: ~${ESTIMATED_FEE_TON} TON (estimate)`);
+  }
+
+  cancelCloseBtn.onclick = () => { hideModal(); pendingCloseTarget = null; }
+
+  confirmCloseBtn.onclick = async () => {
+    if(!pendingCloseTarget) return;
+    modalStatus.innerHTML = '<span class="spinner"></span> Preparing transaction...';
+
+    try {
+      // Build a body BOC to send a "burn/close" message to the jetton wallet.
+      // Many jetton wallet implementations accept an internal "OP" code to burn/close.
+      // Example OP used in many dapps for burning/closing: 0x595f07fb (user-provided)
+      // NOTE: Jetton implementations vary. This message is a standard approach but may not
+      // work for every jetton contract. Test first on testnet.
+      const OP_CLOSE = 0x595f07fb; // as discussed in jetton conventions (some implementations)
+      const queryId = BigInt(Date.now()); // unique
+      // build cell payload: op (uint32), query_id (uint64)
+      const body = beginCell()
+        .storeUint(OP_CLOSE, 32)
+        .storeUint(queryId, 64)
+        // some wallets expect extra fields (amount to burn / to address); we keep minimal
+        .endCell();
+
+      // Prepare top-level message to jetton wallet contract
+      // We will send ESTIMATED_FEE_TON TON with the message
+      const amountTon = ESTIMATED_FEE_TON;
+      const amountStr = String(amountTon); // TonConnect wants string values in TON
+
+      // Convert body to base64 for TonConnect payload
+      const boc = body.toBoc();
+      const bocBase64 = btoa(String.fromCharCode(...boc));
+
+      modalStatus.innerHTML = '<span class="spinner"></span> Opening wallet for signature...';
+
+      // Send via TonConnect
+      const sendRes = await sendTonConnectTransaction([
+        { to: pendingCloseTarget.walletAddress, value: amountStr, bocBase64 }
+      ]);
+
+      // sendRes is signed BOC (or array) — notify and ask user to check block explorer
+      modalStatus.innerHTML = 'Transaction signed and sent (signed BOC returned). Watch on block explorer for finalization.';
+      // Optionally parse response to get message hash, or show the BOC
+      console.log("sendRes:", sendRes);
+      // refresh balances after some seconds (user may want to wait for finalization)
+      setTimeout(()=>reloadAll(), 4200);
+    } catch(err){
+      console.error(err);
+      modalStatus.innerHTML = 'Error: ' + (err.message || String(err));
+    }
+  };
+
+  // ---------- initial state ----------
+  // If user already connected (session cache), tonConnect.onStatusChange will fire on load.
+  // But we can also check status in tonConnect.available or tonConnect.wallet?
+  try {
+    const initial = await tonConnect.getWallet();
+    if(initial) {
+      // will call onStatusChange automatically, but set button text now
+      connectBtn.textContent = "Connected";
+    }
+  } catch(e){ /*ignore*/ }
+
+})();
+</script>
 </body>
 </html>
